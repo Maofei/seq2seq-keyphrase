@@ -1,7 +1,9 @@
 # added by memray
 /.idea/
 /Experiment/
+/Experiment
 /dataset/
+/dataset
 /stanford-postagger/
 .DS_Store
 

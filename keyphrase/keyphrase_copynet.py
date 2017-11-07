@@ -1,38 +1,33 @@
 import logging
 import time
-import numpy as np
 import sys
 import copy
 import math
+import os
+import numpy as np
+from collections import OrderedDict
 
 import theano
-
-import keyphrase_utils
-from keyphrase.dataset import keyphrase_test_dataset
-import os
-
-
-__author__ = "Rui Meng"
-__email__ = "rui.meng@pitt.edu"
-
-
+from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
 theano.config.optimizer='fast_compile'
 os.environ['THEANO_FLAGS'] = 'device=cpu'
-
-from emolga.basic import optimizers
-
 theano.config.exception_verbosity='high'
 # theano.config.compute_test_value = 'warn'
 
-from theano.sandbox.rng_mrg import MRG_RandomStreams as RandomStreams
+this_path = os.path.dirname(__file__)
+sys.path.append(os.path.join(this_path, ".."))
 
-#from keyphrase.dataset.keyphrase_train_dataset import *
 from keyphrase.config import *
+import keyphrase_utils
+from keyphrase.dataset import keyphrase_test_dataset
+#from keyphrase.dataset.keyphrase_train_dataset import *
+
+from emolga.basic import optimizers
 from emolga.utils.generic_utils import *
 from emolga.models.covc_encdec import NRM
 from emolga.models.encdec import NRM as NRM0
 from emolga.dataset.build_dataset import deserialize_from_file, serialize_to_file
-from collections import OrderedDict
+
 from fuel import datasets
 from fuel import transformers
 from fuel import schemes
@@ -60,7 +55,7 @@ class LoggerWriter:
 
 def init_logging(logfile):
     formatter = logging.Formatter('%(asctime)s [%(levelname)s] %(module)s: %(message)s',
-                                  datefmt='%m/%d/%Y %H:%M:%S'   )
+                                  datefmt='%m/%d/%Y %H:%M:%S')
     fh = logging.FileHandler(logfile)
     # ch = logging.StreamHandler()
     ch = logging.StreamHandler(sys.stdout)
@@ -78,8 +73,9 @@ def init_logging(logfile):
 
 def output_stream(dataset, batch_size, size=1):
     data_stream = dataset.get_example_stream()
-    data_stream = transformers.Batch(data_stream,
-                                     iteration_scheme=schemes.ConstantScheme(batch_size))
+    data_stream = transformers.Batch(
+            data_stream,
+            iteration_scheme=schemes.ConstantScheme(batch_size))
 
     # add padding and masks to the dataset
     # Warning: in multiple output case, will raise ValueError: All dimensions except length must be equal, need padding manually
@@ -90,7 +86,8 @@ def output_stream(dataset, batch_size, size=1):
 
 def prepare_batch(batch, mask, fix_len=None):
     data = batch[mask].astype('int32')
-    data = np.concatenate([data, np.zeros((data.shape[0], 1), dtype='int32')], axis=1)
+    data = np.concatenate([data, np.zeros((data.shape[0], 1), dtype='int32')],
+                          axis=1)
 
     def cut_zeros(data, fix_len=None):
         if fix_len is not None:
@@ -109,11 +106,17 @@ def cc_martix(source, target):
     '''
     return the copy matrix, size = [nb_sample, max_len_source, max_len_target]
     '''
-    cc = np.zeros((source.shape[0], target.shape[1], source.shape[1]), dtype='float32')
-    for k in range(source.shape[0]): # go over each sample in source batch
-        for j in range(target.shape[1]): # go over each word in target (all target have same length after padding)
-            for i in range(source.shape[1]): # go over each word in source
-                if (source[k, i] == target[k, j]) and (source[k, i] > 0): # if word match, set cc[k][j][i] = 1. Don't count non-word(source[k, i]=0)
+    cc = np.zeros((source.shape[0], target.shape[1], source.shape[1]),
+                  dtype='float32')
+    # go over each sample in source batch
+    for k in range(source.shape[0]):
+        # go over each word in target (all target have same length after padding)
+        for j in range(target.shape[1]):
+            # go over each word in source
+            for i in range(source.shape[1]):
+                # if word match, set cc[k][j][i] = 1.
+                # Don't count non-word(source[k, i]=0)
+                if (source[k, i] == target[k, j]) and (source[k, i] > 0):
                     cc[k][j][i] = 1.
     return cc
 
@@ -127,7 +130,8 @@ def unk_filter(data):
     if config['voc_size'] == -1:
         return copy.copy(data)
     else:
-        # mask shows whether keeps each word (frequent) or not, only word_index<config['voc_size']=1, else=0
+        # mask shows whether keeps each word (frequent) or not,
+        # only word_index<config['voc_size']=1, else=0
         mask = (np.less(data, config['voc_size'])).astype(dtype='int32')
         # low frequency word will be set to 1 (index of <unk>)
         data = copy.copy(data * mask + (1 - mask))
@@ -138,7 +142,8 @@ def add_padding(data):
     shapes = [np.asarray(sample).shape for sample in data]
     lengths = [shape[0] for shape in shapes]
 
-    # make sure there's at least one zero at last to indicate the end of sentence <eol>
+    # make sure there's at least one zero at last
+    # to indicate the end of sentence <eol>
     max_sequence_length = max(lengths) + 1
     rest_shape = shapes[0][1:]
     padded_batch = np.zeros(
@@ -164,10 +169,11 @@ def split_into_multiple_and_padding(data_s_o, data_t_o):
 
 def build_data(data):
     # create fuel dataset.
-    dataset = datasets.IndexableDataset(indexables=OrderedDict([('source', data['source']),
-                                                                ('target', data['target']),
-                                                                # ('target_c', data['target_c']),
-                                                                ]))
+    dataset = datasets.IndexableDataset(
+            indexables=OrderedDict([('source', data['source']),
+                                    ('target', data['target']),
+                                    # ('target_c', data['target_c']),
+                                    ]))
     dataset.example_iteration_scheme \
         = schemes.ShuffledExampleScheme(dataset.num_examples)
     return dataset
@@ -178,9 +184,12 @@ if __name__ == '__main__':
     # prepare logging.
     config  = setup()   # load settings.
 
-    print('Log path: %s' % (config['path_experiment'] + '/experiments.{0}.id={1}.log'.format(config['task_name'],config['timemark'])))
-    logger  = init_logging(config['path_experiment'] + '/experiments.{0}.id={1}.log'.format(config['task_name'],config['timemark']))
-
+    print('Log path: %s' % (config['path_experiment'] +
+                            '/experiments.{0}.id={1}.log'.format(
+                                    config['task_name'], config['timemark'])))
+    logger  = init_logging(config['path_experiment'] +
+                           '/experiments.{0}.id={1}.log'.format(
+                                   config['task_name'], config['timemark']))
     n_rng   = np.random.RandomState(config['seed'])
     np.random.seed(config['seed'])
     rng     = RandomStreams(n_rng.randint(2 ** 30))
@@ -194,12 +203,17 @@ if __name__ == '__main__':
     # data is too large to dump into file, so has to load from raw dataset directly
     # train_set, test_set, idx2word, word2idx = keyphrase_dataset.load_data_and_dict(config['training_dataset'], config['testing_dataset'])
 
-    train_set, validation_set, test_sets, idx2word, word2idx = deserialize_from_file(config['dataset'])
-    test_sets = keyphrase_test_dataset.load_additional_testing_data(['inspec'], idx2word, word2idx, config, postagging=False)
+    # prepare train, validation, test datasets
+    train_set, validation_set, test_sets, idx2word, word2idx = deserialize_from_file(
+            config['dataset'])
+    test_sets = keyphrase_test_dataset.load_additional_testing_data(
+            ['inspec'], idx2word, word2idx, config, postagging=False)
 
     logger.info('#(training paper)=%d' % len(train_set['source']))
-    logger.info('#(training keyphrase)=%d' % sum([len(t) for t in train_set['target']]))
-    logger.info('#(testing paper)=%d' % sum([len(test_set['target']) for test_set in test_sets.values()]))
+    logger.info('#(training keyphrase)=%d' % sum(
+            [len(t) for t in train_set['target']]))
+    logger.info('#(testing paper)=%d' % sum(
+            [len(test_set['target']) for test_set in test_sets.values()]))
 
     logger.info('Load data done.')
 
@@ -215,7 +229,7 @@ if __name__ == '__main__':
     logger.info('build dataset done. ' +
                 'dataset size: {} ||'.format(predictions) +
                 'vocabulary size = {0}/ batch size = {1}'.format(
-            config['dec_voc_size'], config['batch_size']))
+                    config['dec_voc_size'], config['batch_size']))
 
     # train_data        = build_data(train_set) # a fuel IndexableDataset
     train_data_plain  = list(zip(*(train_set['source'], train_set['target'])))
@@ -229,17 +243,19 @@ if __name__ == '__main__':
             count_all += 1
             if np.greater(phrase, np.asarray(config['voc_size'])).any():
                 count_has_OOV += 1
-    print('%d / %d' % (count_has_OOV, count_all))
+    print('count_has_OOV / count_all:   %d / %d' % (count_has_OOV, count_all))
 
     # test_data_plain   = list(zip(*(test_set['source'],  test_set['target'])))
 
     # trunk the over-long input in testing data
     # for test_set in test_sets.values():
     #     test_set['source'] = [s if len(s)<1000 else s[:1000] for s in test_set['source']]
-    test_data_plain = np.concatenate([list(zip(*(t['source'],  t['target']))) for k,t in test_sets.items()])
+    test_data_plain = np.concatenate(
+            [list(zip(*(t['source'],  t['target']))) for k,t in test_sets.items()])
 
     print('Avg length=%d, Max length=%d' % (
-    np.average([len(s[0]) for s in test_data_plain]), np.max([len(s[0]) for s in test_data_plain])))
+            np.average([len(s[0]) for s in test_data_plain]),
+            np.max([len(s[0]) for s in test_data_plain])))
 
     train_size        = len(train_data_plain)
     test_size         = len(test_data_plain)
@@ -251,10 +267,12 @@ if __name__ == '__main__':
         # build the agent
         if config['copynet']:
             agent = NRM(config, n_rng, rng, mode=config['mode'],
-                         use_attention=True, copynet=config['copynet'], identity=config['identity'])
+                        use_attention=True, copynet=config['copynet'],
+                        identity=config['identity'])
         else:
             agent = NRM0(config, n_rng, rng, mode=config['mode'],
-                          use_attention=True, copynet=config['copynet'], identity=config['identity'])
+                         use_attention=True, copynet=config['copynet'],
+                         identity=config['identity'])
 
         agent.build_()
         agent.compile_('all')
@@ -262,7 +280,8 @@ if __name__ == '__main__':
 
         # load pre-trained model to continue training
         if config['trained_model'] and os.path.exists(config['trained_model']):
-            logger.info('Trained model exists, loading from %s' % config['trained_model'])
+            logger.info('Trained model exists, loading from %s'
+                        % config['trained_model'])
             agent.load(config['trained_model'])
             # agent.save_weight_json(config['weight_json'])
 
@@ -270,12 +289,12 @@ if __name__ == '__main__':
     epochs = 10
     valid_param = {}
     valid_param['early_stop'] = False
-    valid_param['valid_best_score'] = (float(sys.maxsize),float(sys.maxsize))
+    valid_param['valid_best_score'] = (float(sys.maxsize), float(sys.maxsize))
     valid_param['valids_not_improved'] = 0
     valid_param['patience']            = 3
 
     # do training?
-    do_train     = config['do_train']
+    do_train = config['do_train']
     # do predicting?
     do_predict     = config['do_predict']
     # do testing?
@@ -302,7 +321,8 @@ if __name__ == '__main__':
 
             # if it's to resume the previous training, reload the archive and settings before training
             if config['resume_training'] and epoch == 1:
-                name_ordering, batch_id, loss, valid_param, optimizer_config = deserialize_from_file(config['training_archive'])
+                name_ordering, batch_id, loss, valid_param, optimizer_config = deserialize_from_file(
+                        config['training_archive'])
                 batch_start += 1
 
                 optimizer_config['rng'] = agent.rng
@@ -319,7 +339,9 @@ if __name__ == '__main__':
 
             for batch_id in range(batch_start, num_batches):
                 # 1. Prepare data
-                data_ids = name_ordering[batch_id * config['batch_size']:min((batch_id + 1) * config['batch_size'], len(train_data_plain))]
+                data_ids = name_ordering[batch_id * config['batch_size']:
+                                         min((batch_id + 1) * config['batch_size'],
+                                         len(train_data_plain))]
 
                 # obtain mini-batch data
                 data_s = train_data_source[data_ids]
@@ -331,13 +353,14 @@ if __name__ == '__main__':
                 # 2. Training
                 '''
                 As the length of input varies often, it leads to frequent Out-of-Memory on GPU
-                 Thus I have to segment each mini batch into mini-mini batches based on their lengths (number of words)
-                 It slows down the speed somehow, but avoids the break-down effectively
+                Thus I have to segment each mini batch into mini-mini batches based on their lengths (number of words)
+                It slows down the speed somehow, but avoids the break-down effectively
                 '''
                 loss_batch = []
 
                 mini_data_idx = 0
-                max_size = config['mini_mini_batch_length'] # max length (#words) of each mini-mini batch
+                # max length (#words) of each mini-mini batch
+                max_size = config['mini_mini_batch_length']
                 stack_size = 0
                 mini_data_s = []
                 mini_data_t = []
@@ -348,7 +371,9 @@ if __name__ == '__main__':
                         config['mini_mini_batch_length'] = max_size
 
                     # get a new mini-mini batch
-                    while mini_data_idx < len(data_s) and stack_size + len(data_s[mini_data_idx]) * len(data_t[mini_data_idx]) < max_size:
+                    while (mini_data_idx < len(data_s) and
+                           stack_size +
+                           len(data_s[mini_data_idx]) * len(data_t[mini_data_idx]) < max_size):
                         mini_data_s.append(data_s[mini_data_idx])
                         mini_data_t.append(data_t[mini_data_idx])
                         stack_size += len(data_s[mini_data_idx]) * len(data_t[mini_data_idx])
@@ -361,11 +386,12 @@ if __name__ == '__main__':
                     # fit the mini-mini batch
                     if config['copynet']:
                         data_c = cc_martix(mini_data_s, mini_data_t)
-                        loss_batch += [agent.train_(unk_filter(mini_data_s), unk_filter(mini_data_t), data_c)]
+                        loss_batch += [agent.train_(unk_filter(mini_data_s),
+                                                    unk_filter(mini_data_t), data_c)]
                         # loss += [agent.train_guard(unk_filter(mini_data_s), unk_filter(mini_data_t), data_c)]
                     else:
-                        loss_batch += [agent.train_(unk_filter(mini_data_s), unk_filter(mini_data_t))]
-
+                        loss_batch += [agent.train_(unk_filter(mini_data_s),
+                                                    unk_filter(mini_data_t))]
                     mini_data_s = []
                     mini_data_t = []
                     stack_size  = 0
@@ -388,15 +414,18 @@ if __name__ == '__main__':
                     print_case += 'generating [training set] samples\n'
 
                     for _ in range(1):
-                        idx              = int(np.floor(n_rng.rand() * train_size))
+                        idx = int(np.floor(n_rng.rand() * train_size))
 
                         test_s_o, test_t_o = train_data_plain[idx]
 
                         if not config['multi_output']:
                             # create <abs, phrase> pair for each phrase
-                            test_s, test_t = split_into_multiple_and_padding([test_s_o], [test_t_o])
+                            test_s, test_t = split_into_multiple_and_padding(
+                                    [test_s_o], [test_t_o])
 
-                        inputs_unk = np.asarray(unk_filter(np.asarray(test_s[0], dtype='int32')), dtype='int32')
+                        inputs_unk = np.asarray(
+                                unk_filter(np.asarray(test_s[0], dtype='int32')),
+                                dtype='int32')
                         prediction, score = agent.generate_multiple(inputs_unk[None, :])
 
                         outs, metrics = agent.evaluate_multiple([test_s[0]], [test_t],
@@ -407,13 +436,17 @@ if __name__ == '__main__':
 
                     logger.info('generating [testing set] samples')
                     for _ in range(1):
-                        idx            = int(np.floor(n_rng.rand() * test_size))
+                        idx = int(np.floor(n_rng.rand() * test_size))
                         test_s_o, test_t_o = test_data_plain[idx]
                         if not config['multi_output']:
-                            test_s, test_t = split_into_multiple_and_padding([test_s_o], [test_t_o])
+                            test_s, test_t = split_into_multiple_and_padding(
+                                    [test_s_o], [test_t_o])
 
-                        inputs_unk = np.asarray(unk_filter(np.asarray(test_s[0], dtype='int32')), dtype='int32')
-                        prediction, score = agent.generate_multiple(inputs_unk[None, :], return_all=False)
+                        inputs_unk = np.asarray(
+                                unk_filter(np.asarray(test_s[0], dtype='int32')),
+                                dtype='int32')
+                        prediction, score = agent.generate_multiple(
+                                inputs_unk[None, :], return_all=False)
 
                         outs, metrics = agent.evaluate_multiple([test_s[0]], [test_t],
                                                                 [test_s_o], [test_t_o],
@@ -425,7 +458,8 @@ if __name__ == '__main__':
                         print_case_file.write(print_case)
 
                 # 4. Test on validation data for a few batches, and do early-stopping if needed
-                if do_validate and batch_id % 1000 == 0 and not (batch_id==0 and epoch==1):
+                if (do_validate and batch_id % 1000 == 0
+                        and not (batch_id==0 and epoch==1)):
                     logger.info('Validate @ epoch=%d, batch=%d' % (epoch, batch_id))
                     # 1. Prepare data
                     data_s = np.array(validation_set['source'])
@@ -451,11 +485,14 @@ if __name__ == '__main__':
                     mini_data_t = []
                     while mini_data_idx < len(data_s):
                         if len(data_s[mini_data_idx]) * len(data_t[mini_data_idx]) >= max_size:
-                            logger.error('mini_mini_batch_length is too small. Enlarge it to 2 times')
+                            logger.error('mini_mini_batch_length is too small.'
+                                         'Enlarge it to 2 times')
                             max_size = len(data_s[mini_data_idx]) * len(data_t[mini_data_idx]) * 2
                             config['mini_mini_batch_length'] = max_size
 
-                        while mini_data_idx < len(data_s) and stack_size + len(data_s[mini_data_idx]) * len(data_t[mini_data_idx]) < max_size:
+                        while (mini_data_idx < len(data_s) and
+                               stack_size +
+                               len(data_s[mini_data_idx]) * len(data_t[mini_data_idx]) < max_size):
                             mini_data_s.append(data_s[mini_data_idx])
                             mini_data_t.append(data_t[mini_data_idx])
                             stack_size += len(data_s[mini_data_idx]) * len(data_t[mini_data_idx])
@@ -465,9 +502,11 @@ if __name__ == '__main__':
 
                         if config['copynet']:
                             data_c = cc_martix(mini_data_s, mini_data_t)
-                            loss_valid += [agent.validate_(unk_filter(mini_data_s), unk_filter(mini_data_t), data_c)]
+                            loss_valid += [agent.validate_(
+                                    unk_filter(mini_data_s), unk_filter(mini_data_t), data_c)]
                         else:
-                            loss_valid += [agent.validate_(unk_filter(mini_data_s), unk_filter(mini_data_t))]
+                            loss_valid += [agent.validate_(
+                                    unk_filter(mini_data_s), unk_filter(mini_data_t))]
 
                         if mini_data_idx % 100 == 0:
                             print('\t %d / %d' % (mini_data_idx, math.ceil(len(data_s))))
@@ -478,8 +517,11 @@ if __name__ == '__main__':
 
                     mean_ll = np.average(np.concatenate([l[0] for l in loss_valid]))
                     mean_ppl = np.average(np.concatenate([l[1] for l in loss_valid]))
-                    logger.info('\tPrevious best score: \t ll=%f, \t ppl=%f' % (valid_param['valid_best_score'][0], valid_param['valid_best_score'][1]))
-                    logger.info('\tCurrent score: \t ll=%f, \t ppl=%f' % (mean_ll, mean_ppl))
+                    logger.info('\tPrevious best score: \t ll=%f, \t ppl=%f' % (
+                            valid_param['valid_best_score'][0],
+                            valid_param['valid_best_score'][1]))
+                    logger.info('\tCurrent score: \t ll=%f, \t ppl=%f' % (
+                            mean_ll, mean_ppl))
 
                     if mean_ll < valid_param['valid_best_score'][0]:
                         valid_param['valid_best_score'] = (mean_ll, mean_ppl)
@@ -487,22 +529,31 @@ if __name__ == '__main__':
                         valid_param['valids_not_improved'] = 0
                     else:
                         valid_param['valids_not_improved'] += 1
-                        logger.info('Not improved for %s tests.' % valid_param['valids_not_improved'])
+                        logger.info('Not improved for %s tests.'
+                                    % valid_param['valids_not_improved'])
 
                 # 5. Save model
                 if batch_id % 500 == 0 and batch_id > 1:
                     # save the weights every K rounds
-                    agent.save(config['path_experiment'] + '/experiments.{0}.id={1}.epoch={2}.batch={3}.pkl'.format(config['task_name'], config['timemark'], epoch, batch_id))
+                    agent.save(config['path_experiment'] +
+                               '/experiments.{0}.id={1}.epoch={2}.batch={3}.pkl'.format(
+                                       config['task_name'], config['timemark'],
+                                       epoch, batch_id))
 
                     # save the game(training progress) in case of interrupt!
                     optimizer_config = agent.optimizer.get_config()
-                    serialize_to_file([name_ordering, batch_id, loss, valid_param, optimizer_config], config['path_experiment'] + '/save_training_status.id={0}.epoch={1}.batch={2}.pkl'.format(config['timemark'], epoch, batch_id))
+                    serialize_to_file([name_ordering, batch_id, loss, valid_param,
+                                       optimizer_config],
+                                       config['path_experiment'] +
+                                       '/save_training_status.id={0}.epoch={1}.batch={2}.pkl'.format(
+                                               config['timemark'], epoch, batch_id))
                     print(optimizer_config)
                     # agent.save_weight_json(config['path_experiment'] + '/weight.print.id={0}.epoch={1}.batch={2}.json'.format(config['timemark'], epoch, batch_id))
 
                 # 6. Stop if exceed patience
                 if valid_param['valids_not_improved']  >= valid_param['patience']:
-                    print("Not improved for %s epochs. Stopping..." % valid_param['valids_not_improved'])
+                    print("Not improved for %s epochs. Stopping..."
+                          % valid_param['valids_not_improved'])
                     valid_param['early_stop'] = True
                     break
 
@@ -512,16 +563,22 @@ if __name__ == '__main__':
     if do_predict:
         for dataset_name in config['testing_datasets']:
             # override the original test_set
-            test_set = keyphrase_test_dataset.testing_data_loader(dataset_name, kwargs=dict(basedir=config['path'])).load_testing_data_postag(word2idx)
+            test_set = keyphrase_test_dataset.testing_data_loader(
+                    dataset_name, kwargs=dict(basedir=config['path'])
+                    ).load_testing_data_postag(word2idx)
             # test_set = test_sets[dataset_name]
 
-
-            test_data_plain = list(zip(*(test_set['source_str'], test_set['target_str'], test_set['source'], test_set['target'])))
+            test_data_plain = list(zip(*(test_set['source_str'],
+                                         test_set['target_str'],
+                                         test_set['source'],
+                                         test_set['target'])))
             test_size = len(test_data_plain)
 
             print(dataset_name)
             print('Size of test data=%d' % test_size)
-            print('Avg length=%d, Max length=%d' % (np.average([len(s) for s in test_set['source']]), np.max([len(s) for s in test_set['source']])))
+            print('Avg length=%d, Max length=%d' % (
+                    np.average([len(s) for s in test_set['source']]),
+                    np.max([len(s) for s in test_set['source']])))
 
             # use the first 400 samples in krapivin for testing
             if dataset_name == 'krapivin':
@@ -552,7 +609,8 @@ if __name__ == '__main__':
                 # print('')
 
                 if not config['multi_output']:
-                    test_s, test_t = split_into_multiple_and_padding([test_s_o], [test_t_o])
+                    test_s, test_t = split_into_multiple_and_padding(
+                            [test_s_o], [test_t_o])
                 test_s = test_s[0]
 
                 test_s_list.append(test_s)
@@ -560,24 +618,35 @@ if __name__ == '__main__':
                 test_s_o_list.append(test_s_o)
                 test_t_o_list.append(test_t_o)
 
-                print('test_s_o=%d, test_t_o=%d, test_s=%d, test_t=%d' % (len(test_s_o), len(test_t_o), len(test_s), len(test_t)))
+                print('test_s_o=%d, test_t_o=%d, test_s=%d, test_t=%d' % (
+                        len(test_s_o), len(test_t_o), len(test_s), len(test_t)))
 
-                inputs_unk = np.asarray(unk_filter(np.asarray(test_s, dtype='int32')), dtype='int32')
+                inputs_unk = np.asarray(
+                        unk_filter(np.asarray(test_s, dtype='int32')), dtype='int32')
                 # inputs_ = np.asarray(test_s, dtype='int32')
 
-
                 if config['return_encoding']:
-                    input_encoding, prediction, score, output_encoding = agent.generate_multiple(inputs_unk[None, :], return_all=True, return_encoding=True)
+                    input_encoding, prediction, score, \
+                        output_encoding = agent.generate_multiple(
+                            inputs_unk[None, :],
+                            return_all=True, return_encoding=True)
                     input_encodings.append(input_encoding)
                     output_encodings.append(output_encoding)
                 else:
-                    prediction, score = agent.generate_multiple(inputs_unk[None, :], return_encoding=False)
+                    prediction, score = agent.generate_multiple(
+                            inputs_unk[None, :], return_encoding=False)
 
                 predictions.append(prediction)
                 scores.append(score)
                 progbar_test.update(idx, [])
             # store predictions in file
-            serialize_to_file([test_set, test_s_list, test_t_list, test_s_o_list, test_t_o_list, input_encodings, predictions, scores, output_encodings, idx2word], config['predict_path'] + 'predict.{0}.{1}.pkl'.format(config['predict_type'], dataset_name))
+            serialize_to_file([test_set, test_s_list, test_t_list,
+                               test_s_o_list, test_t_o_list,
+                               input_encodings, predictions, scores,
+                               output_encodings, idx2word],
+                               config['predict_path'] +
+                               'predict.{0}.{1}.pkl'.format(
+                                       config['predict_type'], dataset_name))
 
     '''
     Evaluate on Testing Data
@@ -585,9 +654,18 @@ if __name__ == '__main__':
     if do_evaluate:
 
         for dataset_name in config['testing_datasets']:
-            print_test = open(config['predict_path'] + '/experiments.{0}.id={1}.testing@{2}.{3}.len={4}.beam={5}.log'.format(config['task_name'],config['timemark'],dataset_name, config['predict_type'], config['max_len'], config['sample_beam']), 'w')
+            print_test = open(
+                    config['predict_path'] +
+                    '/experiments.{0}.id={1}.testing@{2}.{3}.len={4}.beam={5}.log'.format(
+                            config['task_name'], config['timemark'],
+                            dataset_name, config['predict_type'],
+                            config['max_len'], config['sample_beam']), 'w')
 
-            test_set, test_s_list, test_t_list, test_s_o_list, test_t_o_list, _, predictions, scores, _, idx2word = deserialize_from_file(config['predict_path']+'predict.{0}.{1}.pkl'.format(config['predict_type'], dataset_name))
+            test_set, test_s_list, test_t_list, test_s_o_list, test_t_o_list,\
+                    _, predictions, scores, _, idx2word = deserialize_from_file(
+                    config['predict_path']+
+                    'predict.{0}.{1}.pkl'.format(
+                            config['predict_type'], dataset_name))
 
             # use the first 400 samples in krapivin for testing
             if dataset_name == 'krapivin':
@@ -603,21 +681,26 @@ if __name__ == '__main__':
 
                 test_set = new_test_set
 
-            print_test.write('Evaluating on %s size=%d @ epoch=%d \n' % (dataset_name, test_size, epoch))
-            logger.info('Evaluating on %s size=%d @ epoch=%d \n' % (dataset_name, test_size, epoch))
+            print_test.write('Evaluating on %s size=%d @ epoch=%d \n' % (
+                    dataset_name, test_size, epoch))
+            logger.info('Evaluating on %s size=%d @ epoch=%d \n' % (
+                    dataset_name, test_size, epoch))
 
             do_stem = True
             if dataset_name == 'semeval':
                 do_stem = False
 
             # Evaluation
-            outs, overall_score = keyphrase_utils.evaluate_multiple(config, test_set, test_s_list, test_t_list,
-                                                        test_s_o_list, test_t_o_list,
-                                                        predictions, scores, idx2word, do_stem,
-                                                        model_name=config['task_name'], dataset_name=dataset_name)
+            outs, overall_score = keyphrase_utils.evaluate_multiple(
+                    config, test_set, test_s_list, test_t_list,
+                    test_s_o_list, test_t_o_list,
+                    predictions, scores, idx2word, do_stem,
+                    model_name=config['task_name'],
+                    dataset_name=dataset_name)
 
             print_test.write(' '.join(outs))
-            print_test.write(' '.join(['%s : %s' % (str(k), str(v)) for k,v in overall_score.items()]))
+            print_test.write(' '.join(['%s : %s' % (
+                    str(k), str(v)) for k,v in overall_score.items()]))
             logger.info('*' * 50)
 
             logger.info(overall_score)

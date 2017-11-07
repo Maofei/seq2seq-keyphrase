@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Python File Template 
+Python File Template
 """
 from nltk.internals import find_jars_within_path
 from nltk.tag import StanfordPOSTagger
@@ -749,9 +749,10 @@ def load_additional_testing_data(testing_names, idx2word, word2idx, config, post
                 'data_process_name'] + dataset_name + '.testing.pkl'))
             dataloader          = testing_data_loader(dataset_name, kwargs=dict(basedir=config['path']))
             records             = dataloader.get_docs()
+
+            # pairs are : tokenLists and keyphrases
             records, pairs, _   = utils.load_pairs(records, process_type=process_type, do_filter=False)
             test_set            = utils.build_data(pairs, idx2word, word2idx)
-
             test_set['record']  = records
 
             if postagging:

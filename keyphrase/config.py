@@ -31,20 +31,20 @@ def setup_keyphrase_all():
     # config['do_train']        = False
 
     # do quick-testing (while training)?
-    config['do_quick_testing']     = True
-    # config['do_quick_testing']     = False
+    # config['do_quick_testing']     = True
+    config['do_quick_testing']     = False
 
     # do validation?
-    config['do_validate']     = True
-    # config['do_validate']     = False
+    # config['do_validate']     = True
+    config['do_validate']     = False
 
     # do predicting?
-    config['do_predict']      = True
-    # config['do_predict']      = False
+    # config['do_predict']      = True
+    config['do_predict']      = False
 
     # do testing?
-    config['do_evaluate']     = True
-    # config['do_evaluate']     = False
+    # config['do_evaluate']     = True
+    config['do_evaluate']     = False
 
     '''
     Training settings

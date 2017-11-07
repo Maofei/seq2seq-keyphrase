@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 """
-Python File Template 
+Python File Template
 """
 
 import os
@@ -116,7 +116,7 @@ def build_data(data, idx2word, word2idx):
         # instance['target_c'] += [C]
         # instance['cc_matrix'] += [C]
         if count % 1000 == 0:
-            print('-------------------- %d ---------------------------' % count)
+            print('-- build data --------------- %d ---------------------------' % count)
             print(source)
             print(target)
             print(A)
