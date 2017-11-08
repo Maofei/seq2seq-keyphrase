@@ -24,7 +24,7 @@ from keyphrase.dataset import keyphrase_test_dataset
 
 from emolga.basic import optimizers
 from emolga.utils.generic_utils import *
-from emolga.models.covc_encdec import NRM
+from emolga.models.NRM import NRM
 from emolga.models.encdec import NRM as NRM0
 from emolga.dataset.build_dataset import deserialize_from_file, serialize_to_file
 

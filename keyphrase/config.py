@@ -77,7 +77,7 @@ def setup_keyphrase_all():
     config['get_instance']    = True
 
     # size
-    config['batch_size']      = 50
+    config['batch_size']      = 5  #50
     # config['mini_batch_size'] = 20 # not useful any more
     config['mini_mini_batch_length']      = 300000 # max length (#words) of each mini-mini batch, up to the GPU memory you have
     config['mode']            = 'RNN'

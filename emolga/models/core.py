@@ -14,7 +14,6 @@ from emolga.utils.theano_utils import floatX
 
 logger = logging.getLogger(__name__)
 
-
 class Model(object):
     def __init__(self):
         self.layers  = []
